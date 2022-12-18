@@ -7,3 +7,5 @@ func FilterEquals(key string, val string) interface{} {
 		key: val,
 	}
 }
+
+var emptyFilter = bson.D{}

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/borerer/nlib-app-logs/database"
 	nlibgo "github.com/borerer/nlib-go"
@@ -22,6 +23,31 @@ func mustString(in map[string]interface{}, key string) (string, error) {
 		return "", fmt.Errorf("invalid type %s", key)
 	}
 	return str, nil
+}
+
+func mustInt(in map[string]interface{}, key string) (int, error) {
+	raw, ok := in[key]
+	if !ok {
+		return 0, fmt.Errorf("missing %s", key)
+	}
+	var ret int
+	switch v := raw.(type) {
+	case int:
+		ret = v
+	case float64:
+		ret = int(v)
+	case float32:
+		ret = int(v)
+	case string:
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, err
+		}
+		ret = i
+	default:
+		return 0, fmt.Errorf("invalid type %s", key)
+	}
+	return ret, nil
 }
 
 func log(level string, in map[string]interface{}) interface{} {
@@ -52,6 +78,22 @@ func error_(in map[string]interface{}) interface{} {
 	return log("error", in)
 }
 
+func get(in map[string]interface{}) interface{} {
+	n, err := mustInt(in, "n")
+	if err != nil {
+		n = 100
+	}
+	skip, err := mustInt(in, "skip")
+	if err != nil {
+		skip = 0
+	}
+	logs, err := mongoClient.GetLogs(n, skip)
+	if err != nil {
+		return err.Error()
+	}
+	return logs
+}
+
 func wait() {
 	ch := make(chan bool)
 	<-ch
@@ -71,5 +113,6 @@ func main() {
 	nlib.RegisterFunction("info", info)
 	nlib.RegisterFunction("warn", warn)
 	nlib.RegisterFunction("error", error_)
+	nlib.RegisterFunction("get", get)
 	wait()
 }
