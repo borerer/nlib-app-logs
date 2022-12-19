@@ -50,7 +50,11 @@ func mustInt(in map[string]interface{}, key string) (int, error) {
 	return ret, nil
 }
 
-func log(level string, in map[string]interface{}) interface{} {
+func log(in map[string]interface{}) interface{} {
+	level, err := mustString(in, "level")
+	if err != nil {
+		level = "info"
+	}
 	message, err := mustString(in, "message")
 	if err != nil {
 		return err.Error()
@@ -63,19 +67,23 @@ func log(level string, in map[string]interface{}) interface{} {
 }
 
 func debug(in map[string]interface{}) interface{} {
-	return log("debug", in)
+	in["level"] = "debug"
+	return log(in)
 }
 
 func info(in map[string]interface{}) interface{} {
-	return log("info", in)
+	in["level"] = "info"
+	return log(in)
 }
 
 func warn(in map[string]interface{}) interface{} {
-	return log("warn", in)
+	in["level"] = "warn"
+	return log(in)
 }
 
 func error_(in map[string]interface{}) interface{} {
-	return log("error", in)
+	in["level"] = "error"
+	return log(in)
 }
 
 func get(in map[string]interface{}) interface{} {
@@ -109,6 +117,7 @@ func main() {
 		return
 	}
 	nlib := nlibgo.NewClient(os.Getenv("NLIB_SERVER"), "logs")
+	nlib.RegisterFunction("log", log)
 	nlib.RegisterFunction("debug", debug)
 	nlib.RegisterFunction("info", info)
 	nlib.RegisterFunction("warn", warn)
