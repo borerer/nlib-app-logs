@@ -6,7 +6,7 @@ import (
 	"strconv"
 
 	"github.com/borerer/nlib-app-logs/database"
-	nlibgo "github.com/borerer/nlib-go"
+	nlib "github.com/borerer/nlib-go"
 )
 
 var (
@@ -50,7 +50,7 @@ func mustInt(in map[string]interface{}, key string) (int, error) {
 	return ret, nil
 }
 
-func log(in map[string]interface{}) interface{} {
+func log(in nlib.SimpleFunctionIn) interface{} {
 	level, err := mustString(in, "level")
 	if err != nil {
 		level = "info"
@@ -66,27 +66,27 @@ func log(in map[string]interface{}) interface{} {
 	return "ok"
 }
 
-func debug(in map[string]interface{}) interface{} {
+func debug(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
 	in["level"] = "debug"
 	return log(in)
 }
 
-func info(in map[string]interface{}) interface{} {
+func info(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
 	in["level"] = "info"
 	return log(in)
 }
 
-func warn(in map[string]interface{}) interface{} {
+func warn(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
 	in["level"] = "warn"
 	return log(in)
 }
 
-func error_(in map[string]interface{}) interface{} {
+func error_(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
 	in["level"] = "error"
 	return log(in)
 }
 
-func get(in map[string]interface{}) interface{} {
+func get(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
 	n, err := mustInt(in, "n")
 	if err != nil {
 		n = 100
@@ -107,16 +107,21 @@ func wait() {
 	<-ch
 }
 
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
 func main() {
 	mongoClient = database.NewMongoClient(&database.MongoConfig{
 		URI:      os.Getenv("NLIB_MONGO_URI"),
 		Database: os.Getenv("NLIB_MONGO_DATABASE"),
 	})
-	if err := mongoClient.Start(); err != nil {
-		println(err.Error())
-		return
-	}
-	nlib := nlibgo.NewClient(os.Getenv("NLIB_SERVER"), "logs")
+	must(mongoClient.Start())
+	nlib.SetEndpoint(os.Getenv("NLIB_SERVER"))
+	nlib.SetAppID("logs")
+	must(nlib.Connect())
 	nlib.RegisterFunction("log", log)
 	nlib.RegisterFunction("debug", debug)
 	nlib.RegisterFunction("info", info)
