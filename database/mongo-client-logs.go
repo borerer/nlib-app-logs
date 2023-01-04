@@ -11,7 +11,7 @@ const (
 	CollectionLogs = "logs"
 )
 
-func (mc *MongoClient) AddLogs(level string, message string, details interface{}) error {
+func (mc *MongoClient) AddLogs(level string, message string, details map[string]interface{}) error {
 	doc := DBLogs{
 		Level:     level,
 		Message:   message,

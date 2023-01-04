@@ -47,15 +47,23 @@ func logGET(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
 }
 
 func logPOST(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
-	parseLog := func(req *nlib.FunctionIn) (string, string, interface{}) {
+	parseLog := func(req *nlib.FunctionIn) (string, string, map[string]interface{}) {
 		if req.PostData != nil && req.PostData.Text != nil {
 			var j map[string]interface{}
 			err := json.Unmarshal([]byte(*req.PostData.Text), &j)
 			if err == nil {
-				key := j["level"].(string)
+				level := "info"
+				levelRaw, ok := j["level"]
+				if ok {
+					level = levelRaw.(string)
+				}
 				message := j["message"].(string)
-				details := j["details"]
-				return key, message, details
+				detailsRaw, ok := j["details"]
+				if !ok {
+					return level, message, nil
+				}
+				details := detailsRaw.(map[string]interface{})
+				return level, message, details
 			}
 		}
 		return "", "", nil
