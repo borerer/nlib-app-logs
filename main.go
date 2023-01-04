@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"strconv"
@@ -49,21 +50,24 @@ func logGET(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
 func logPOST(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
 	parseLog := func(req *nlib.FunctionIn) (string, string, map[string]interface{}) {
 		if req.PostData != nil && req.PostData.Text != nil {
-			var j map[string]interface{}
-			err := json.Unmarshal([]byte(*req.PostData.Text), &j)
+			buf, err := base64.StdEncoding.DecodeString(*req.PostData.Text)
 			if err == nil {
-				level := "info"
-				levelRaw, ok := j["level"]
-				if ok {
-					level = levelRaw.(string)
+				var j map[string]interface{}
+				err := json.Unmarshal(buf, &j)
+				if err == nil {
+					level := "info"
+					levelRaw, ok := j["level"]
+					if ok {
+						level = levelRaw.(string)
+					}
+					message := j["message"].(string)
+					detailsRaw, ok := j["details"]
+					if !ok {
+						return level, message, nil
+					}
+					details := detailsRaw.(map[string]interface{})
+					return level, message, details
 				}
-				message := j["message"].(string)
-				detailsRaw, ok := j["details"]
-				if !ok {
-					return level, message, nil
-				}
-				details := detailsRaw.(map[string]interface{})
-				return level, message, details
 			}
 		}
 		return "", "", nil
