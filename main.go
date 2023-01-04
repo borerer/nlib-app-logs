@@ -1,116 +1,113 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"os"
 	"strconv"
 
 	"github.com/borerer/nlib-app-logs/database"
 	nlib "github.com/borerer/nlib-go"
+	"github.com/borerer/nlib-go/har"
+	nlibshared "github.com/borerer/nlib-shared/go"
 )
 
 var (
 	mongoClient *database.MongoClient
 )
 
-func mustString(in map[string]interface{}, key string) (string, error) {
-	raw, ok := in[key]
-	if !ok {
-		return "", fmt.Errorf("missing %s", key)
-	}
-	str, ok := raw.(string)
-	if !ok {
-		return "", fmt.Errorf("invalid type %s", key)
-	}
-	return str, nil
-}
-
-func mustInt(in map[string]interface{}, key string) (int, error) {
-	raw, ok := in[key]
-	if !ok {
-		return 0, fmt.Errorf("missing %s", key)
-	}
-	var ret int
-	switch v := raw.(type) {
-	case int:
-		ret = v
-	case float64:
-		ret = int(v)
-	case float32:
-		ret = int(v)
-	case string:
-		i, err := strconv.Atoi(v)
-		if err != nil {
-			return 0, err
+func getQuery(req *nlib.FunctionIn, key string) string {
+	for _, query := range req.QueryString {
+		if query.Name == key {
+			return query.Value
 		}
-		ret = i
-	default:
-		return 0, fmt.Errorf("invalid type %s", key)
 	}
-	return ret, nil
+	return ""
 }
 
-func log(in nlib.SimpleFunctionIn) interface{} {
-	level, err := mustString(in, "level")
+func getQueryAsInt(req *nlib.FunctionIn, key string) int {
+	val := getQuery(req, key)
+	i, err := strconv.Atoi(val)
 	if err != nil {
+		return 0
+	}
+	return i
+}
+
+func logGET(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	level := getQuery(req, "level")
+	if len(level) == 0 {
 		level = "info"
 	}
-	message, err := mustString(in, "message")
+	message := getQuery(req, "message")
+	err := mongoClient.AddLogs(level, message, nil)
 	if err != nil {
-		return err.Error()
+		return nil, err
 	}
-	err = mongoClient.AddLogs(level, message, in["details"])
-	if err != nil {
-		return err.Error()
+	return har.Text("ok"), nil
+}
+
+func logPOST(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	parseLog := func(req *nlib.FunctionIn) (string, string, interface{}) {
+		if req.PostData != nil && req.PostData.Text != nil {
+			var j map[string]interface{}
+			err := json.Unmarshal([]byte(*req.PostData.Text), &j)
+			if err == nil {
+				key := j["level"].(string)
+				message := j["message"].(string)
+				details := j["details"]
+				return key, message, details
+			}
+		}
+		return "", "", nil
 	}
-	return "ok"
-}
-
-func debug(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
-	in["level"] = "debug"
-	return log(in)
-}
-
-func info(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
-	in["level"] = "info"
-	return log(in)
-}
-
-func warn(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
-	in["level"] = "warn"
-	return log(in)
-}
-
-func error_(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
-	in["level"] = "error"
-	return log(in)
-}
-
-func get(in nlib.SimpleFunctionIn) nlib.SimpleFunctionOut {
-	n, err := mustInt(in, "n")
+	level, message, details := parseLog(req)
+	err := mongoClient.AddLogs(level, message, details)
 	if err != nil {
+		return nil, err
+	}
+	return har.Text("ok"), nil
+}
+
+func log(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	if req.Method == "GET" {
+		return logGET(req)
+	} else if req.Method == "POST" {
+		return logPOST(req)
+	}
+	return har.Err405, nil
+}
+
+func debug(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	req.QueryString = append(req.QueryString, nlibshared.Query{Name: "level", Value: "debug"})
+	return log(req)
+}
+
+func info(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	req.QueryString = append(req.QueryString, nlibshared.Query{Name: "level", Value: "info"})
+	return log(req)
+}
+
+func warn(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	req.QueryString = append(req.QueryString, nlibshared.Query{Name: "level", Value: "warn"})
+	return log(req)
+}
+
+func error_(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	req.QueryString = append(req.QueryString, nlibshared.Query{Name: "level", Value: "error"})
+	return log(req)
+}
+
+func get(req *nlib.FunctionIn) (*nlib.FunctionOut, error) {
+	n := getQueryAsInt(req, "n")
+	if n == 0 {
 		n = 100
 	}
-	skip, err := mustInt(in, "skip")
-	if err != nil {
-		skip = 0
-	}
+	skip := getQueryAsInt(req, "skip")
 	logs, err := mongoClient.GetLogs(n, skip)
 	if err != nil {
-		return err.Error()
+		return nil, err
 	}
-	return logs
-}
-
-func wait() {
-	ch := make(chan bool)
-	<-ch
-}
-
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
+	return har.JSON(logs), nil
 }
 
 func main() {
@@ -118,15 +115,17 @@ func main() {
 		URI:      os.Getenv("NLIB_MONGO_URI"),
 		Database: os.Getenv("NLIB_MONGO_DATABASE"),
 	})
-	must(mongoClient.Start())
+	nlib.Must(mongoClient.Start())
+
 	nlib.SetEndpoint(os.Getenv("NLIB_SERVER"))
 	nlib.SetAppID("logs")
-	must(nlib.Connect())
+	nlib.Must(nlib.Connect())
+
 	nlib.RegisterFunction("log", log)
 	nlib.RegisterFunction("debug", debug)
 	nlib.RegisterFunction("info", info)
 	nlib.RegisterFunction("warn", warn)
 	nlib.RegisterFunction("error", error_)
 	nlib.RegisterFunction("get", get)
-	wait()
+	nlib.Wait()
 }
